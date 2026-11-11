@@ -132,6 +132,10 @@ into the read buffer, followed by `UnrealBloomPass`, a custom final shader
 | `npm run test:browser` | Headless Chrome/Edge CDP smoke test against the production build: boot, routes, dossier, panel, index, language switch, zero console errors |
 | `npm run ci` | Runs the full chain above in one command |
 
+`CPU_THROTTLE=8 npm run test:browser` throttles the renderer to simulate a slow
+device and verifies that transitions still settle (GSAP lag smoothing is
+disabled because WebGL frames can exceed 500 ms).
+
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and
 pull request to `main`: `npm ci` → typecheck → unit tests → build → artifact
 verification → headless WebGL2 browser smoke test. The `dist/` bundle is

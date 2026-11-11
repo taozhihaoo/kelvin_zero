@@ -125,6 +125,9 @@ Firefox / Safari）。声音默认关闭，点击 **进入美术馆** 或 **声�
 | `npm run test:browser` | 无头 Chrome/Edge CDP 冒烟测试：启动、路由、档案、面板、索引、语言切换、零控制台错误 |
 | `npm run ci` | 一次跑完以上全部步骤 |
 
+`CPU_THROTTLE=8 npm run test:browser` 可把渲染节流到慢设备水平，验证转场仍能按时结束
+（WebGL 单帧可能超过 500ms，因此已关闭 GSAP lag smoothing）。
+
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 在 `main` 分支的每次 push 与 PR 上运行：
 `npm ci` → 类型检查 → 单元测试 → 构建 → 产物校验 → 无头 WebGL2 浏览器冒烟测试。
 构建成功后会上传 `dist/` 作为工作流产物。若浏览器不在 `PATH` 中，请设置

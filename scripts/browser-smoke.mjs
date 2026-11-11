@@ -173,6 +173,11 @@ try {
   };
 
   await send('Page.enable'); await send('Runtime.enable');
+  const throttle = Number(process.env.CPU_THROTTLE || 0);
+  if (throttle > 0) {
+    await send('Emulation.setCPUThrottlingRate', { rate: throttle });
+    log(`CPU throttling ×${throttle} (slow-device simulation)`);
+  }
   log(`navigating to ${base}/?autoenter&warm=3&lang=en`);
   await send('Page.navigate', { url: `${base}/?autoenter&warm=3&lang=en` });
 
