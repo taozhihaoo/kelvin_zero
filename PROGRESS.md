@@ -56,3 +56,33 @@
 
 全路由遍历 `#/#/room/1..6/#/index`：0 控制台错误、0 白屏；霜冻转场、HUD 数据、
 绝对零度（Z 进/出）、Manifesto 开合、索引悬停预览均验证通过。截图检查点 M2/M6/M9 完成。
+
+## 后续维护：UI 精修 + 缺陷修复 + 双语文档 + CI（2026-11-11）
+
+- **UI**：重写设计系统（`src/style.css` / `index.html`）——仪表盘式 HUD、玻璃质展品档案、
+  中庭选中展品卡、前后展厅导航、参数面板填充进度条、Loader 大标题+进度条+编号日志、
+  索引页编辑式行列表、策展声明双栏版式、配准标记与细网格、扫描线/颗粒/暗角轻量叠加。
+- **双语**：新增 `src/config/i18n.ts`，默认英文；`?lang=zh` 或 HUD「中文 / EN」按钮
+  无刷新切换主语言（文案、面板标签、Loader、索引、降级页、document.title 同步更新）。
+  生成 `docs/screenshots/*-en.jpg` 与 `*-zh.jpg` 各 3 张真实界面截图。
+- **修复**（均有代码证据）：
+  - `main.ts` SOUND 按钮首次开启状态不同步（`AudioEngine.enable()` 异步；
+    改为同步置位 + 立即刷新 HUD）。
+  - `main.ts` 重复进入同一路由会清空档案与参数面板且不恢复（`mgr.go` 提前返回 +
+    `lastSettled` 短路；新增 force 重挂载路径）。
+  - `horizon.ts` / `lattice.ts` 拖动结束后 `dragging` 只在 click 里复位，导致惯性与
+    空闲自转永久停止（`Input` 新增 `up` 事件，含 pointercancel）。
+  - `indexPage.ts` 指针移出索引行后预览卡不消失、刷新用 `Math.random()` 帧率相关
+    （新增 pointerleave + 时间累加器）。
+  - `atrium.ts` 温度读数在中庭选展品时错误回到 293.15 K；Enter 键在聚焦 HUD 按钮上
+    误进展厅；点击非当前门户无反应（现在旋转到该门户）。
+  - `text.ts` `countTo` 每次新建 tween 对象导致快速切换时温度读数抖动（改 WeakMap 稳定目标）。
+  - `main.ts` 初始未按 perf 档位关闭 Bloom；`audio/engine.ts` 低频振荡器降了两个八度；
+    `echo.ts` 音高环 `material.opacity` 对自定义 shader 无效（改 `uOpacity` uniform）；
+    `panel.ts` 转场期间提前显示参数面板（新增 gate）；`loader.ts` 未释放材质/几何体。
+- **文档**：`README.md`（英文，默认）与 `README.zh-CN.md`（中文），各自引用对应语言截图；
+  Security / License 两节统一英文；新增 `SECURITY.md` 与 `LICENSE`（MIT，英文）。
+- **CI**：新增 `.github/workflows/ci.yml`（npm ci → typecheck → 13 项单元测试 → build →
+  产物校验 → 无头 WebGL2 浏览器冒烟），配套 `tests/*.test.mjs`、
+  `scripts/verify-build.mjs`、`scripts/browser-smoke.mjs`（CDP，零新增依赖）。
+- **验证**：`npm run ci` 全链路通过；CDP 全路由回归 15 项 PASS，0 控制台错误。

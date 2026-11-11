@@ -45,7 +45,10 @@ export function fadeUp(el: HTMLElement, delay = 0, dist = 16) {
   );
 }
 
-/** rolling number counter */
+/** rolling number counter — one stable tween target per element so rapid
+ *  route changes cannot leave two tweens fighting over the same readout. */
+const counters = new WeakMap<HTMLElement, { v: number }>();
+
 export function countTo(
   el: HTMLElement,
   from: number,
@@ -53,12 +56,14 @@ export function countTo(
   dur: number,
   fmt: (v: number) => string,
 ) {
-  const o = { v: from };
-  gsap.killTweensOf(o);
+  let o = counters.get(el);
+  if (o) gsap.killTweensOf(o);
+  else { o = { v: from }; counters.set(el, o); }
+  o.v = from;
   gsap.to(o, {
     v: to,
     duration: dur,
     ease: 'power2.out',
-    onUpdate: () => { el.textContent = fmt(o.v); },
+    onUpdate: () => { el.textContent = fmt(o!.v); },
   });
 }

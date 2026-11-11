@@ -4,7 +4,7 @@ import { createRenderer, hasWebGL2 } from './core/renderer';
 import { Clock } from './core/clock';
 import { Input } from './core/input';
 import { Perf } from './core/perf';
-import { Router, routeKey, routeTitle, type Route } from './core/router';
+import { Router, routeKey, routeTitle, neighbourIds, type Route } from './core/router';
 import { SceneManager } from './core/sceneManager';
 import { Post } from './core/post';
 import { AudioEngine } from './audio/engine';
@@ -26,7 +26,10 @@ import { createEcho } from './rooms/echo';
 import { createHorizon } from './rooms/horizon';
 import { createIndexPage } from './rooms/indexPage';
 import { roomByKey } from './config/rooms';
+import { initLang, getLang, setLang, onLangChange, tr } from './config/i18n';
 import { initDebugStats } from './core/debug';
+
+initLang();
 
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
 
@@ -50,6 +53,8 @@ function boot() {
   registry.blip = () => audio.blip();
   registry.cursorHot = (label) => cursor.current?.setHot(!!label, label);
   const post = new Post(renderer, mgr, window.innerWidth, window.innerHeight);
+  // Bloom/Reflector must honour the starting tier (mobile begins on low/mid).
+  post.setTier(perf.tier, window.innerWidth, window.innerHeight);
 
   const rooms: Room[] = [
     createAtrium(), createTuring(), createMercury(), createCurl(),
@@ -64,15 +69,21 @@ function boot() {
     onIndex: () => router.go('#/index'),
     onSound: () => {
       if (audio.enabled) audio.disable();
-      else { audio.enable(); audio.setDrone(currentDrone()); }
+      else {
+        void audio.enable();
+        audio.setDrone(currentDrone());
+      }
       hud.setSound(audio.enabled);
       if (audio.enabled) audio.blip();
     },
     onZero: () => toggleZero(),
+    onLang: () => setLang(getLang() === 'en' ? 'zh' : 'en'),
+    onPrev: () => goNeighbour(-1),
+    onNext: () => goNeighbour(1),
   });
   const manifesto = new Manifesto(() => manifesto.close());
   registry.hud = hud;
-  (document.getElementById('btn-manifesto') as HTMLElement)
+  document.getElementById('btn-manifesto')!
     .addEventListener('click', () => manifesto.open());
 
   // subtle hover ticks on every button
@@ -84,26 +95,39 @@ function boot() {
     }
   });
 
+  // language switch: rebuild all DOM chrome without reloading the WebGL scene
+  onLangChange(() => {
+    hud.refresh();
+    manifesto.refresh();
+    panel.refresh();
+    registry.refreshIndex?.();
+    registry.refreshSelection?.();
+    document.title = routeTitle(router.current(), getLang());
+  });
+
   // ----------------------------------------------------------- loader -------
   const loader = new Loader();
-  const steps: LoaderStep[] = [{ label: 'INIT RENDERER — WEBGL2' }];
+  const steps: LoaderStep[] = [{ label: tr('loader.init') }];
   for (const r of rooms) {
     steps.push({
-      label: `BUILD ${r.id.toUpperCase()}`,
+      label: `${tr('loader.build')} ${r.id.toUpperCase()}`,
       run: () => r.init(ctx),
     });
   }
   steps.push({
-    label: 'WARMING GPGPU + THUMBS',
+    label: tr('loader.chilling'),
     run: async () => {
-      for (const r of rooms) mgr.warmThumb(r);
+      // `?warm=N` shortens the thumbnail warm-up for automated screenshot runs.
+      const q = Number(new URLSearchParams(location.search).get('warm'));
+      const frames = Number.isFinite(q) && q > 0 ? Math.min(24, Math.floor(q)) : 24;
+      for (const r of rooms) mgr.warmThumb(r, frames);
     },
   });
   steps.push({
-    label: 'COMPILING SHADERS',
+    label: tr('loader.compile'),
     run: () => { void renderer; },
     live: (el) => {
-      el.textContent = `${renderer.info.programs?.length ?? 0} PROGRAMS · OK`;
+      el.textContent = `${renderer.info.programs?.length ?? 0} ${tr('loader.programs')}`;
     },
   });
 
@@ -118,6 +142,7 @@ function boot() {
   const applyRoute = (route: Route) => {
     const key = routeKey(route);
     if (!mgr.rooms.has(key)) return;
+    const sameRoom = key === mgr.currentId;
     const origin = clickPending ? pendingOrigin : { x: 0.5, y: 0.5 };
     clickPending = false;
     currentKey = key;
@@ -125,19 +150,24 @@ function boot() {
     hud.setRoute(route, meta);
     hud.setIndexActive(route.name === 'index');
     hud.hideInfoBlock();
-    panel.clear();
-    document.title = routeTitle(route);
+    if (!sameRoom) panel.clear();
+    document.title = routeTitle(route, getLang());
     mgr.go(key, origin);
-    if (!mgr.transitioning) onSettledKey(key);
+    // If `go` did not start a wipe (same route, or immediate boot), refresh the
+    // dossier + panel here instead of losing them behind the lastSettled guard.
+    if (!mgr.transitioning) onSettledKey(key, sameRoom);
   };
   router.on(applyRoute);
 
-  mgr.onTransitionStart = () => audio.crack();
+  mgr.onTransitionStart = () => {
+    audio.crack();
+    panel.setGate(true); // controls reveal only after the frost settles
+  };
   mgr.onBloom = (b) => post.setBloom(b);
   mgr.onSettled = (id) => onSettledKey(id);
 
-  function onSettledKey(key: string) {
-    if (key === lastSettled) return;
+  function onSettledKey(key: string, force = false) {
+    if (key === lastSettled && !force) return;
     lastSettled = key;
     const meta = roomByKey(key);
     if (meta) {
@@ -145,12 +175,26 @@ function boot() {
         ? `${(perf.params.curlN * perf.params.curlN).toLocaleString('en-US')} PARTICLES`
         : meta.countLabel || undefined;
       hud.showInfoBlock(meta, count);
+      if (force) panel.remount();
     } else {
       hud.hideInfoBlock();
     }
-    if (key === 'atrium') hud.showHint('DRAG · WHEEL · ← →', 3);
-    (window as any).__roomSettled?.(key);  }
+    panel.setGate(false);
+    if (key === 'atrium') {
+      hud.showHint(tr('hud.dragHint'), 3);
+      // re-sync the readout with the carousel selection (applyRoute resets it
+      // to the atrium ambient value)
+      registry.refreshSelection?.();
+    }
+    (window as any).__roomSettled?.(key);
+  }
   let lastSettled = '';
+
+  function goNeighbour(dir: number) {
+    const cur = router.current();
+    const id = cur.name === 'room' ? cur.id : (dir > 0 ? '0' : '1');
+    router.go(`#/room/${neighbourIds(id, dir)}`);
+  }
 
   // ------------------------------------------------------ absolute zero ----
   let zeroOn = false;
@@ -174,12 +218,7 @@ function boot() {
         registry.arrowHandler(code === 'ArrowRight' ? 1 : -1);
         return;
       }
-      const cur = router.current();
-      let n = cur.name === 'room' ? parseInt(cur.id, 10) : 0;
-      n = code === 'ArrowRight' ? n + 1 : n - 1;
-      if (n < 1) n = 6;
-      if (n > 6) n = 1;
-      router.go(`#/room/${n}`);
+      goNeighbour(code === 'ArrowRight' ? 1 : -1);
       return;
     }
     if (code === 'Escape') {
@@ -238,15 +277,17 @@ function boot() {
     mgr,
     clock,
     audio,
+    getLang,
+    setLang,
     advance(n: number, step = 1 / 60) {
       for (let i = 0; i < n; i++) mgr.update(clock.t += step, step);
     },
   };
 
   window.addEventListener('resize', () => {
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     post.resize(window.innerWidth, window.innerHeight);
-    post.setTier(perf.tier, window.innerWidth, window.innerHeight);
     mgr.resize(window.innerWidth, window.innerHeight);
   });
 
@@ -278,6 +319,7 @@ console.error = (...a: any[]) => {
 
 if (!hasWebGL2()) {
   showFallback();
+  onLangChange(() => showFallback());
 } else {
   boot();
 }

@@ -10,6 +10,7 @@ export interface RoomMeta {
   lineZh: string;
   tech: string[];
   hints: string;
+  hintsZh: string;
   droneHz: number;
   countLabel?: string; // e.g. particle count
 }
@@ -24,6 +25,7 @@ export const ROOMS: RoomMeta[] = [
     lineZh: '两种化学物，一条规则，无尽的皮肤。',
     tech: ['GRAY–SCOTT REACTION-DIFFUSION', 'GPU PING-PONG', 'HEIGHTFIELD LIGHTING'],
     hints: 'DRAG INJECT · SPACE RESET · KEYS 1–4 PRESETS',
+    hintsZh: '拖动注入 · 空格重置 · 数字键 1–4 切换图案',
     droneHz: 110,
   },
   {
@@ -33,6 +35,7 @@ export const ROOMS: RoomMeta[] = [
     lineZh: '一面忘了形状的镜子。',
     tech: ['RAYMARCHED SDF', 'SMOOTH UNION', 'PROCEDURAL STUDIO HDRI', 'DISPERSION'],
     hints: 'MOVE TO LURE · CLICK SHOCKWAVE',
+    hintsZh: '移动鼠标牵引 · 点击产生冲击波',
     droneHz: 98,
   },
   {
@@ -42,6 +45,7 @@ export const ROOMS: RoomMeta[] = [
     lineZh: '百万粒子，服从同一个方程。',
     tech: ['GPGPU', 'CURL NOISE', 'STRANGE ATTRACTORS · AIZAWA / THOMAS / LORENZ'],
     hints: 'MOUSE ATTRACT · CLICK BURST · KEYS 1–4 MODES',
+    hintsZh: '鼠标吸引 · 点击爆发 · 数字键 1–4 切换模式',
     droneHz: 87.3,
     countLabel: '',
   },
@@ -52,6 +56,7 @@ export const ROOMS: RoomMeta[] = [
     lineZh: '秩序，被渲染成天气。',
     tech: ['INSTANCEDMESH ×40,000', 'VERTEX DISPLACEMENT', 'SHOCKWAVES', 'RIM LIGHT'],
     hints: 'CLICK SHOCKWAVE · DRAG ORBIT',
+    hintsZh: '点击冲击波 · 拖动环绕',
     droneHz: 82.4,
   },
   {
@@ -61,6 +66,7 @@ export const ROOMS: RoomMeta[] = [
     lineZh: '最古老的光，被演奏成乐器。',
     tech: ['WEB AUDIO SYNTH', 'FFT WATERFALL', 'OCCLUSION-LINE RENDERING'],
     hints: 'HOLD TO PLAY · X = PITCH · Y = FILTER / VOLUME',
+    hintsZh: '按住发声 · X 控制音高 · Y 控制滤波与音量',
     droneHz: 0, // room 005 turns the drone off — it becomes the instrument
   },
   {
@@ -70,6 +76,7 @@ export const ROOMS: RoomMeta[] = [
     lineZh: '光在此停止争辩。',
     tech: ['GEODESIC RAY BENDING', 'ACCRETION DISK', 'DOPPLER BEAMING', 'GRAVITATIONAL LENSING'],
     hints: 'DRAG ORBIT · WHEEL DISTANCE · MASS SLIDER',
+    hintsZh: '拖动环绕 · 滚轮调节距离 · 滑块调节质量',
     droneHz: 55,
   },
 ];

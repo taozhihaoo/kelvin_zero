@@ -21,12 +21,13 @@ export class Input {
     window.addEventListener('pointermove', this.onMove, { passive: true });
     window.addEventListener('pointerdown', this.onDown, { passive: true });
     window.addEventListener('pointerup', this.onUp, { passive: true });
+    window.addEventListener('pointercancel', this.onCancel, { passive: true });
     window.addEventListener('wheel', this.onWheel, { passive: true });
     window.addEventListener('keydown', this.onKey);
     window.addEventListener('blur', () => { this.down = false; });
   }
 
-  on(kind: 'click' | 'drag' | 'wheel' | 'key' | 'move', h: Handler): () => void {
+  on(kind: 'click' | 'drag' | 'wheel' | 'key' | 'move' | 'up', h: Handler): () => void {
     let s = this.handlers.get(kind);
     if (!s) { s = new Set(); this.handlers.set(kind, s); }
     s.add(h);
@@ -70,6 +71,9 @@ export class Input {
   private onUp = (e: PointerEvent) => {
     if (!this.down) return;
     this.down = false;
+    // Always signal the end of a gesture. Rooms use this to release drag state;
+    // without it, drags (moved >= 8px) would leave inertia/idle rotation frozen.
+    this.emit('up', { dragged: this.moved >= 8 });
     if (this.moved < 8 && !this.isUI(e.target)) {
       const ux = e.clientX / window.innerWidth;
       const uy = 1 - e.clientY / window.innerHeight;
@@ -82,6 +86,12 @@ export class Input {
     }
   };
 
+  private onCancel = () => {
+    if (!this.down) return;
+    this.down = false;
+    this.emit('up', { dragged: true });
+  };
+
   private onWheel = (e: WheelEvent) => {
     if (this.isUI(e.target)) return;
     this.wheelDelta += e.deltaY;
@@ -90,6 +100,11 @@ export class Input {
 
   private onKey = (e: KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement) return;
+    // Enter/Space belong to the focused control (button / link / index row),
+    // otherwise pressing Enter on a HUD button also entered the selected exhibit.
+    const interactive = e.target instanceof Element &&
+      !!e.target.closest('button, a, input, select, textarea, [data-ui], [role="link"]');
+    if (interactive && (e.code === 'Enter' || e.code === 'Space')) return;
     this.emit('key', { code: e.code, key: e.key, event: e });
   };
 
@@ -117,6 +132,7 @@ export class Input {
     window.removeEventListener('pointermove', this.onMove);
     window.removeEventListener('pointerdown', this.onDown);
     window.removeEventListener('pointerup', this.onUp);
+    window.removeEventListener('pointercancel', this.onCancel);
     window.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('keydown', this.onKey);
   }

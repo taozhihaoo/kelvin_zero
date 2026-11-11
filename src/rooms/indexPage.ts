@@ -3,10 +3,10 @@ import gsap from 'gsap';
 import common from '../shaders/common.glsl?raw';
 import worldQuadVert from '../shaders/worldQuad.vert.glsl?raw';
 import previewFrag from '../shaders/preview.frag.glsl?raw';
-import { Subs, makeThumb, type Room, type Ctx, type BloomSettings } from './room';
+import { makeThumb, type Room, type Ctx, type BloomSettings } from './room';
 import { registry } from '../ui/registry';
 import { ROOMS } from '../config/rooms';
-import { COPY } from '../config/copy';
+import { tr, L } from '../config/i18n';
 
 const BLOOM: BloomSettings = { strength: 0.5, radius: 0.4, threshold: 0.3 };
 
@@ -16,45 +16,61 @@ const BLOOM: BloomSettings = { strength: 0.5, radius: 0.4, threshold: 0.3 };
  */
 export function createIndexPage(): Room {
   const thumb = makeThumb();
-  const subs = new Subs();
   let ctx: Ctx;
   let scene: THREE.Scene;
   let cam: THREE.PerspectiveCamera;
   let mat: THREE.ShaderMaterial;
+  let mesh: THREE.Mesh;
   let dom: HTMLElement | null = null;
   let hovered = -1;
+  let refreshAcc = 0;
   const pos = { x: 0, y: 0 };
   const vel = { v: 0 };
-  let lastPx = 0; let lastPy = 0;
+
+  function fadePreview(on: boolean) {
+    gsap.to(mat.uniforms.uOpacity, { value: on ? 1 : 0, duration: 0.32, overwrite: true });
+    if (!on) hovered = -1;
+  }
 
   function buildDom() {
+    dom?.remove();
+    gsap.killTweensOf(mat.uniforms.uOpacity);
+    mat.uniforms.uOpacity.value = 0;
+    hovered = -1;
     dom = document.createElement('div');
     dom.innerHTML = `
+      <div class="index-head"><span>${tr('index.heading')}</span><span>${tr('index.sub')}</span></div>
       <ol class="index-list">
         ${ROOMS.map((r, i) => `
           <li class="index-row" data-i="${i}" data-cursor="ENTER" tabindex="0" role="link"
-              aria-label="进入展厅 00${r.id} ${r.nameEn}">
+              aria-label="${tr('index.rowAria')} 00${r.id} ${L(r.nameEn, r.nameZh)}">
             <span class="idx">00${r.id}</span>
-            <span class="nm">${r.nameEn}</span>
-            <span class="zh">${r.nameZh}</span>
+            <span class="nm">${L(r.nameEn, r.nameZh)}</span>
+            <span class="zh">${L(r.nameZh, r.nameEn)}</span>
             <span class="tmp">${r.tempLabel}</span>
             <span class="tech">${r.tech[0]}</span>
+            <span class="row-go">${tr('index.enter')}</span>
           </li>`).join('')}
       </ol>
-      <div class="index-stats">${COPY.indexStats}</div>`;
+      <div class="index-stats">${tr('index.stats')}</div>`;
     dom.querySelectorAll('.index-row').forEach((el) => {
       const i = parseInt((el as HTMLElement).dataset.i!, 10);
       el.addEventListener('pointerenter', () => {
         hovered = i;
         const room = registry.mgr?.rooms.get(ROOMS[i].key);
         if (room?.thumb) mat.uniforms.tThumb.value = room.thumb.texture;
-        gsap.to(mat.uniforms.uOpacity, { value: 1, duration: 0.3, overwrite: true });
+        fadePreview(true);
         registry.blip?.();
       });
       const go = () => registry.router?.go(`#/room/${ROOMS[i].id}`);
       el.addEventListener('click', go);
-      el.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).code === 'Enter') go(); });
+      el.addEventListener('keydown', (e) => {
+        const code = (e as KeyboardEvent).code;
+        if (code === 'Enter' || code === 'Space') { (e as KeyboardEvent).preventDefault(); go(); }
+      });
     });
+    // moving out of the list hides the card again (previously it stayed forever)
+    dom.querySelector('.index-list')!.addEventListener('pointerleave', () => fadePreview(false));
     document.getElementById('room-dom')!.appendChild(dom);
   }
 
@@ -78,19 +94,19 @@ export function createIndexPage(): Room {
         transparent: true,
         depthTest: false,
       });
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 2.625), mat);
+      mesh = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 2.625), mat);
       mesh.position.z = 2;
       mesh.frustumCulled = false;
       scene.add(mesh);
-      (this as any)._mesh = mesh;
     },
     enter() {
       buildDom();
-      const offMove = ctx.input.on('move', () => {});
-      subs.add(offMove);
+      registry.refreshIndex = buildDom;
+      hovered = -1;
+      refreshAcc = 0;
     },
     leave() {
-      subs.flush();
+      registry.refreshIndex = null;
       dom?.remove();
       dom = null;
       hovered = -1;
@@ -99,7 +115,6 @@ export function createIndexPage(): Room {
     },
     update(t, dt) {
       mat.uniforms.uTime.value = t;
-      // card trails the pointer
       const asp = cam.aspect;
       const tx = ctx.input.x * asp * 3.1;
       const ty = ctx.input.y * 2.3;
@@ -108,12 +123,14 @@ export function createIndexPage(): Room {
       const py = pos.y + (ty - pos.y) * k;
       vel.v += (Math.min(1.6, Math.hypot(px - pos.x, py - pos.y) / Math.max(dt, 1e-3) * .35) - vel.v) * k;
       pos.x = px; pos.y = py;
-      ((this as any)._mesh as THREE.Mesh).position.set(pos.x, pos.y, 2);
+      mesh.position.set(pos.x, pos.y, 2);
       mat.uniforms.uVel.value = vel.v;
-      // refresh preview content at ~15fps while hovering
-      if (hovered >= 0) {
+      // refresh preview content at ~15fps while hovering (frame-rate independent)
+      refreshAcc += dt;
+      if (hovered >= 0 && refreshAcc > 1 / 15) {
+        refreshAcc = 0;
         const room = registry.mgr?.rooms.get(ROOMS[hovered].key);
-        if (room?.thumb && Math.random() < 0.25) {
+        if (room?.thumb) {
           room.update(ctx.clock.t, 1 / 30);
           room.render(ctx.renderer, room.thumb);
         }
@@ -131,9 +148,9 @@ export function createIndexPage(): Room {
     resize() {},
     thumb,
     dispose() {
-      subs.flush();
       dom?.remove();
-      mat.dispose();
+      mesh?.geometry.dispose();
+      mat?.dispose();
       thumb.dispose();
     },
   };

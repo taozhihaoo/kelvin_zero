@@ -12,4 +12,7 @@ export const registry = {
   cursorHot: null as ((label: string) => void) | null,
   /** atrium installs this to capture ←/→ while it is current */
   arrowHandler: null as ((dir: number) => void) | null,
+  /** language-switch hooks: rebuild DOM owned by the current room */
+  refreshIndex: null as (() => void) | null,
+  refreshSelection: null as (() => void) | null,
 };

@@ -112,9 +112,9 @@ export function createCurl(): Room {
 
   function makePanel() {
     return [
-      { type: 'buttons' as const, label: 'MODE / 模式', options: MODES, value: panelSel, onChange: setMode },
+      { type: 'buttons' as const, label: 'MODE', labelZh: '模式', options: MODES, value: panelSel, onChange: setMode },
       {
-        type: 'slider' as const, label: 'SPEED / 速度', min: 0.1, max: 3, step: 0.05,
+        type: 'slider' as const, label: 'SPEED', labelZh: '速度', min: 0.1, max: 3, step: 0.05,
         value: speed, onChange: (v: number) => { speed = v; },
       },
     ];

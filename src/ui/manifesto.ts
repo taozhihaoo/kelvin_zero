@@ -1,11 +1,8 @@
 import gsap from 'gsap';
 import { COPY } from '../config/copy';
+import { tr, getLang } from '../config/i18n';
 import { maskRise, fadeUp } from './text';
 import { cursor } from './cursor';
-
-function gsapSafe(el: HTMLElement, from: any, to: any) {
-  gsap.fromTo(el, from, to);
-}
 
 /** Full-screen bilingual manifesto overlay (atrium, bottom-left button). */
 export class Manifesto {
@@ -13,41 +10,60 @@ export class Manifesto {
   isOpen = false;
   private closeBtn: HTMLElement;
 
-  constructor(onRequestClose: () => void) {
+  constructor(private onRequestClose: () => void) {
     this.el = document.getElementById('manifesto')!;
-    const m = COPY.manifesto;
-    this.el.innerHTML = `
-      <div class="mani-inner">
-        <div class="mani-tag">KELVIN ZERO — CURATORIAL STATEMENT</div>
-        <h2 data-mani-title>${m.title}</h2>
-        <div class="mani-cols">
-          <div class="mani-en">
-            ${m.lines.map((l) => `<p data-mani-en>${l.en}</p>`).join('')}
-            <p style="opacity:.55;margin-top:1.4em">${COPY.taglineEn}<br/>${COPY.subEn}</p>
-          </div>
-          <div class="mani-zh">
-            ${m.lines.map((l) => `<p data-mani-zh>${l.zh}</p>`).join('')}
-            <p style="opacity:.55;margin-top:1.4em">${COPY.taglineZh}<br/>${COPY.subZh}</p>
-          </div>
-        </div>
-      </div>`;
     this.closeBtn = document.createElement('button');
     this.closeBtn.className = 'manifesto-close';
     this.closeBtn.dataset.cursor = 'CLOSE';
-    this.closeBtn.setAttribute('aria-label', '关闭策展声明');
-    this.closeBtn.textContent = COPY.hud.close;
-    this.el.appendChild(this.closeBtn);
-    this.closeBtn.addEventListener('click', () => onRequestClose());
+    this.closeBtn.addEventListener('click', () => this.onRequestClose());
+    this.build(false);
   }
+
+  private build(animate: boolean) {
+    const m = COPY.manifesto;
+    const isZh = getLang() === 'zh';
+    this.el.innerHTML = `
+      <div class="mani-frame" aria-hidden="true"></div>
+      <div class="mani-inner">
+        <div class="mani-top">
+          <span class="mani-tag">${tr('manifesto.tag')}</span>
+          <span class="mani-index">00 / 03</span>
+        </div>
+        <h2 data-mani-title>${tr('manifesto.title')}</h2>
+        <div class="mani-rule"></div>
+        <div class="mani-cols">
+          <div class="mani-col ${isZh ? 'dim' : 'lead'}">
+            <div class="mani-lang">${tr('manifesto.tagEn')}</div>
+            ${m.lines.map((l) => `<p data-mani-en>${l.en}</p>`).join('')}
+            <p class="mani-sign">${COPY.taglineEn}<br/>${COPY.subEn}</p>
+          </div>
+          <div class="mani-col ${isZh ? 'lead' : 'dim'}">
+            <div class="mani-lang">${tr('manifesto.tagZh')}</div>
+            ${m.lines.map((l) => `<p data-mani-zh>${l.zh}</p>`).join('')}
+            <p class="mani-sign">${COPY.taglineZh}<br/>${COPY.subZh}</p>
+          </div>
+        </div>
+      </div>`;
+    this.closeBtn.textContent = tr('manifesto.close');
+    this.closeBtn.setAttribute('aria-label', tr('manifesto.closeAria'));
+    this.el.appendChild(this.closeBtn);
+    if (animate) {
+      maskRise(this.el.querySelector('[data-mani-title]')!, { stagger: 0.02 });
+      this.el.querySelectorAll('[data-mani-en], [data-mani-zh]').forEach((p, i) =>
+        fadeUp(p as HTMLElement, 0.18 + (i % 3) * 0.12, 18));
+      this.el.querySelectorAll('.mani-sign').forEach((p) => fadeUp(p as HTMLElement, 0.6, 12));
+    }
+  }
+
+  /** rebuild for a language change without replaying the entrance animation */
+  refresh() { this.build(false); }
 
   open() {
     if (this.isOpen) return;
     this.isOpen = true;
     this.el.hidden = false;
-    gsapSafe(this.el, { opacity: 0 }, { opacity: 1, duration: 0.35 });
-    maskRise(this.el.querySelector('[data-mani-title]')!, { stagger: 0.02 });
-    this.el.querySelectorAll('[data-mani-en]').forEach((p, i) => fadeUp(p as HTMLElement, 0.25 + i * 0.14, 22));
-    this.el.querySelectorAll('[data-mani-zh]').forEach((p, i) => fadeUp(p as HTMLElement, 0.45 + i * 0.14, 22));
+    this.build(true);
+    gsap.fromTo(this.el, { opacity: 0 }, { opacity: 1, duration: 0.35, overwrite: true });
     this.closeBtn.focus();
     cursor.current?.setHot(true, 'CLOSE');
   }
@@ -57,8 +73,8 @@ export class Manifesto {
     this.isOpen = false;
     cursor.current?.setHot(false);
     const el = this.el;
-    gsapSafe(el, { opacity: 1 }, {
-      opacity: 0, duration: 0.3,
+    gsap.to(el, {
+      opacity: 0, duration: 0.3, overwrite: true,
       onComplete: () => { el.hidden = true; },
     });
   }

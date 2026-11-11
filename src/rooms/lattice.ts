@@ -54,11 +54,11 @@ export function createLattice(): Room {
   function makePanel() {
     return [
       {
-        type: 'slider' as const, label: 'AMPLITUDE / 振幅', min: 0.4, max: 2, step: 0.05,
+        type: 'slider' as const, label: 'AMPLITUDE', labelZh: '振幅', min: 0.4, max: 2, step: 0.05,
         value: amp, onChange: (v: number) => { amp = v; },
       },
       {
-        type: 'slider' as const, label: 'WAVE SPEED / 波速', min: 0.5, max: 2, step: 0.05,
+        type: 'slider' as const, label: 'WAVE SPEED', labelZh: '波速', min: 0.5, max: 2, step: 0.05,
         value: waveSpeed, onChange: (v: number) => { waveSpeed = v; },
       },
     ];
@@ -121,7 +121,7 @@ export function createLattice(): Room {
         orbit.theta += p.dx * 0.004;
         orbit.vTheta = p.dx * 0.004;
       });
-      const offUp = ctx.input.on('click', () => { orbit.dragging = false; });
+      const offUp = ctx.input.on('up', () => { orbit.dragging = false; });
       const offTier = ctx.perf.onTier(() => {
         N = ctx.perf.params.latticeN;
         build();

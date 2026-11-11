@@ -104,14 +104,18 @@ export class AudioEngine {
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
   }
 
-  async enable() {
+  enable(): Promise<void> {
     this.ensure();
-    try { await this.ctx!.resume(); } catch { /* ignore */ }
+    // All state that the UI depends on is applied synchronously; waiting for
+    // AudioContext.resume() is done by the returned promise only. In some
+    // browsers resume() stays pending without a trusted gesture — the button
+    // must still reflect the requested state.
     this.enabled = true;
     const t = this.ctx!.currentTime;
     this.master.gain.cancelScheduledValues(t);
     this.master.gain.setTargetAtTime(0.85, t, 0.6);
     if (this.droneHz > 0) this.setDrone(this.droneHz);
+    return this.ctx!.resume().catch(() => { /* ignore blocked autoplay */ });
   }
 
   disable() {
@@ -137,7 +141,7 @@ export class AudioEngine {
       return;
     }
     if (this.droneOscs.length === 0) {
-      const detunes = [-6, 5, -1200]; // two near-unison saws + one octave-down triangle
+      const detunes = [-6, 5, 0]; // two near-unison saws + one octave-down triangle
       const types: OscillatorType[] = ['sawtooth', 'sawtooth', 'triangle'];
       for (let i = 0; i < 3; i++) {
         const o = this.ctx.createOscillator();

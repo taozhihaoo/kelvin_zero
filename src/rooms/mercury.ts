@@ -61,7 +61,7 @@ export function createMercury(): Room {
       registry.panel?.set(
         [
           {
-            type: 'slider', label: 'WARP / 形变', min: 0, max: 2, step: 0.01,
+            type: 'slider', label: 'WARP', labelZh: '形变', min: 0, max: 2, step: 0.01,
             value: base.material.uniforms.uWarp.value,
             onChange: (v) => { base.material.uniforms.uWarp.value = v; },
           },

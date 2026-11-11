@@ -85,18 +85,18 @@ export function createHorizon(): Room {
         st.idle = 0;
         st.dist = Math.min(16, Math.max(4.5, st.dist + p.dy * 0.006));
       });
-      const offUp = ctx.input.on('click', () => { st.dragging = false; });
+      const offUp = ctx.input.on('up', () => { st.dragging = false; });
       const offTier = ctx.perf.onTier(() => { scale = ctx.perf.params.renderScale; });
       [offDrag, offWheel, offUp, offTier].forEach(subs.add, subs);
       registry.panel?.set(
         [
           {
-            type: 'slider', label: 'MASS / 质量', min: 0.6, max: 1.6, step: 0.01,
+            type: 'slider', label: 'MASS', labelZh: '质量', min: 0.6, max: 1.6, step: 0.01,
             value: base.material.uniforms.uMass.value,
             onChange: (v) => { base.material.uniforms.uMass.value = v; },
           },
           {
-            type: 'slider', label: 'DISK / 吸积盘', min: 0, max: 2, step: 0.01,
+            type: 'slider', label: 'DISK', labelZh: '吸积盘', min: 0, max: 2, step: 0.01,
             value: base.material.uniforms.uDisk.value,
             onChange: (v) => { base.material.uniforms.uDisk.value = v; },
           },

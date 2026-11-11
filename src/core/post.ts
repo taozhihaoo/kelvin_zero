@@ -39,7 +39,7 @@ export class Post {
         uRTime: { value: 0 },
         uVel: { value: 0 },
         uFrost: { value: 0 },
-        uGrain: { value: 0.05 },
+        uGrain: { value: 0.032 },
         uAberr: { value: 0 },
         uRes: { value: new THREE.Vector2(w, h) },
       },

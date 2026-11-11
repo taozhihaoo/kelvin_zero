@@ -1,8 +1,20 @@
 // Minimal hash router: #/ · #/room/1..6 · #/index — back/forward supported.
+// Pure module: no DOM access at import time, so it is unit-testable in Node.
 export type Route =
   | { name: 'atrium' }
   | { name: 'room'; id: string }
   | { name: 'index' };
+
+export type Lang = 'en' | 'zh';
+
+const NAMES_EN: Record<string, string> = {
+  '1': 'TURING', '2': 'MERCURY', '3': 'CURL',
+  '4': 'LATTICE', '5': 'ECHO', '6': 'HORIZON',
+};
+const NAMES_ZH: Record<string, string> = {
+  '1': '图灵', '2': '水银', '3': '旋度',
+  '4': '晶格', '5': '回声', '6': '事件视界',
+};
 
 export function parseHash(hash: string): Route {
   const h = (hash || '#/').replace(/^#/, '');
@@ -25,14 +37,25 @@ export function routeHash(r: Route): string {
   return '#/';
 }
 
-export function routeTitle(r: Route): string {
-  if (r.name === 'atrium') return 'KELVIN ZERO — 零度美术馆';
-  if (r.name === 'index') return 'INDEX — KELVIN ZERO 零度美术馆';
-  const names: Record<string, string> = {
-    '1': 'TURING / 图灵', '2': 'MERCURY / 水银', '3': 'CURL / 旋度',
-    '4': 'LATTICE / 晶格', '5': 'ECHO / 回声', '6': 'HORIZON / 事件视界',
-  };
-  return `KELVIN ZERO — 00${r.id} ${names[r.id] ?? ''}`;
+export function routeTitle(r: Route, lang: Lang = 'en'): string {
+  if (r.name === 'atrium') {
+    return lang === 'zh' ? 'KELVIN ZERO — 零度美术馆' : 'KELVIN ZERO — A Gallery of Computed Phenomena';
+  }
+  if (r.name === 'index') return 'INDEX — KELVIN ZERO';
+  const name = lang === 'zh'
+    ? `${NAMES_EN[r.id] ?? ''} / ${NAMES_ZH[r.id] ?? ''}`
+    : (NAMES_EN[r.id] ?? '');
+  return `KELVIN ZERO — 00${r.id} ${name}`;
+}
+
+/** neighbour exhibit ids for the on-screen PREV / NEXT controls (wraps 1..6) */
+export function neighbourIds(id: string, dir: number): string {
+  let n = parseInt(id, 10);
+  if (!Number.isFinite(n)) n = 1;
+  n += dir;
+  if (n < 1) n = 6;
+  if (n > 6) n = 1;
+  return String(n);
 }
 
 export class Router {

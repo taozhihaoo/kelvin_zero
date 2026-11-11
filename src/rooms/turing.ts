@@ -94,17 +94,17 @@ export function createTuring(): Room {
   function makePanel() {
     return [
       {
-        type: 'buttons' as const, label: 'PATTERN / 图案', options: PRESETS.map((p) => p.name),
+        type: 'buttons' as const, label: 'PATTERN', labelZh: '图案', options: PRESETS.map((p) => p.name),
         value: panelSelection, onChange: (i: number) => setPreset(i),
       },
       {
-        type: 'slider' as const, label: 'BRUSH / 画笔', min: 0.02, max: 0.12, step: 0.005,
+        type: 'slider' as const, label: 'BRUSH', labelZh: '画笔', min: 0.02, max: 0.12, step: 0.005,
         value: brushSize,
         fmt: (v: number) => v.toFixed(3),
         onChange: (v: number) => { brushSize = v; },
       },
       {
-        type: 'buttons' as const, label: 'SEED / 重置', options: ['RESET'],
+        type: 'buttons' as const, label: 'SEED', labelZh: '重置', options: ['RESET'],
         value: -1, onChange: () => { if (ctx) reseed(ctx.renderer); },
       },
     ];

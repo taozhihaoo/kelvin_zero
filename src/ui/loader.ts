@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import quadVert from '../shaders/quad.vert.glsl?raw';
 import ballFrag from '../shaders/loaderBall.frag.glsl?raw';
-import { COPY } from '../config/copy';
+import { tr } from '../config/i18n';
 import { T } from '../config/timings';
 
 export interface LoaderStep {
@@ -13,18 +13,24 @@ export interface LoaderStep {
 
 interface Line { root: HTMLElement; status: HTMLElement }
 
+const $ = (id: string) => document.getElementById(id)!;
+
 /**
  * Terminal-style boot sequence with a small raymarched orb that cools from
  * molten orange to frost white as real initialization progresses.
  */
 export class Loader {
-  private root = document.getElementById('loader')!;
-  private log = document.getElementById('loader-log')!;
-  private actions = document.getElementById('loader-actions')!;
+  private root = $('loader');
+  private log = $('loader-log');
+  private actions = $('loader-actions');
+  private pct = $('loader-pct');
+  private fill = $('loader-bar-fill');
+  private meta = $('loader-meta');
   private lines: Line[] = [];
   private progress = 0;
   private renderer: THREE.WebGLRenderer | null = null;
   private mat: THREE.ShaderMaterial | null = null;
+  private mesh: THREE.Mesh | null = null;
   private scene = new THREE.Scene();
   private cam = new THREE.Camera();
   private raf = 0;
@@ -32,7 +38,13 @@ export class Loader {
   private done = false;
 
   constructor() {
-    const canvas = document.getElementById('loader-ball') as HTMLCanvasElement;
+    $('loader-kicker').textContent = tr('loader.kicker');
+    $('loader-sub').textContent = tr('loader.sub');
+    $('t-enter').textContent = tr('loader.enter');
+    $('t-enter-silent').textContent = tr('loader.silent');
+    $('btn-enter').setAttribute('aria-label', tr('loader.enterAria'));
+    $('btn-enter-silent').setAttribute('aria-label', tr('loader.silentAria'));
+    const canvas = $('loader-ball') as HTMLCanvasElement;
     try {
       this.renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false });
       this.renderer.setClearColor(0x000000, 0);
@@ -44,9 +56,9 @@ export class Loader {
         depthTest: false,
         depthWrite: false,
       });
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.mat);
-      mesh.frustumCulled = false;
-      this.scene.add(mesh);
+      this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.mat);
+      this.mesh.frustumCulled = false;
+      this.scene.add(this.mesh);
       this.spin();
     } catch {
       canvas.style.display = 'none'; // degraded loader — text only
@@ -61,9 +73,18 @@ export class Loader {
     this.renderer.render(this.scene, this.cam);
   };
 
-  private print(text: string, status = ''): Line {
+  private setProgress(p: number) {
+    this.progress = p;
+    const pct = Math.round(p * 100);
+    this.pct.textContent = `${pct.toString().padStart(3, '0')}%`;
+    this.fill.style.width = `${pct}%`;
+    this.meta.textContent = pct >= 100 ? tr('loader.ready') : tr('loader.initialising');
+  }
+
+  private print(text: string, status = '', index = 0): Line {
     const root = document.createElement('div');
-    root.innerHTML = `<span class="dim">▸</span> ${text} `;
+    root.className = 'log-line';
+    root.innerHTML = `<span class="log-n">${String(index).padStart(2, '0')}</span><span class="dim">▸</span> <span class="log-t">${text}</span> `;
     const st = document.createElement('span');
     st.className = 'ok';
     st.textContent = status;
@@ -78,27 +99,27 @@ export class Loader {
     const started = performance.now();
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
-      const line = this.print(s.label, '…');
+      const line = this.print(s.label, '…', i + 1);
       await s.run?.();
       if (s.live) s.live(line.status);
       else line.status.textContent = 'OK';
-      this.progress = (i + 1) / steps.length;
+      this.setProgress((i + 1) / steps.length);
       await frame();
     }
     const remain = T.loaderMinVisible * 1000 - (performance.now() - started);
     if (remain > 0) await sleep(remain);
-    this.progress = 1;
-    this.print('READY. — CHILLED TO 0 K', '◇');
+    this.setProgress(1);
+    this.print(tr('loader.ready'), '◇', steps.length + 1);
   }
 
   /** reveal ENTER buttons; resolve with the chosen entrance */
   awaitEnter(): Promise<'gallery' | 'silent'> {
     return new Promise((resolve) => {
       this.actions.classList.add('show');
-      const btn = document.getElementById('btn-enter');
-      const btnS = document.getElementById('btn-enter-silent');
-      btn!.addEventListener('click', () => resolve('gallery'), { once: true });
-      btnS!.addEventListener('click', () => resolve('silent'), { once: true });
+      const btn = $('btn-enter');
+      const btnS = $('btn-enter-silent');
+      btn.addEventListener('click', () => resolve('gallery'), { once: true });
+      btnS.addEventListener('click', () => resolve('silent'), { once: true });
     });
   }
 
@@ -107,13 +128,15 @@ export class Loader {
     this.done = true;
     cancelAnimationFrame(this.raf);
     this.root.classList.add('done');
-    import('./text').then(({ fadeUp }) => fadeUp(this.actions, 0, 0));
     const el = this.root;
     window.setTimeout(() => {
-      el.style.transition = 'opacity .6s';
+      el.style.transition = 'opacity .6s, transform .6s';
       el.style.opacity = '0';
+      el.style.transform = 'scale(1.015)';
       window.setTimeout(() => { el.style.display = 'none'; }, 650);
-    }, 350);
+    }, 300);
+    this.mat?.dispose();
+    this.mesh?.geometry.dispose();
     this.renderer?.dispose();
     this.renderer = null;
   }

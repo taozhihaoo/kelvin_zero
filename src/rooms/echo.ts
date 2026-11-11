@@ -9,7 +9,7 @@ import ringFrag from '../shaders/echoRing.frag.glsl?raw';
 import { Subs, makeThumb, type Room, type Ctx, type BloomSettings } from './room';
 import { registry } from '../ui/registry';
 import { AudioEngine } from '../audio/engine';
-import { COPY } from '../config/copy';
+import { tr } from '../config/i18n';
 
 const BLOOM: BloomSettings = { strength: 0.8, radius: 0.5, threshold: 0.25 };
 const ROWS = 64, COLS = 128;
@@ -29,6 +29,8 @@ export function createEcho(): Room {
   let rowPtr = 0;
   let ring: THREE.Mesh;
   let ringMat: THREE.ShaderMaterial;
+  let waterfall: THREE.Mesh;
+  let motesGeo: THREE.BufferGeometry;
   const rowBuf = new Uint8Array(COLS);
   let octave = 0;
   let playing = false;
@@ -62,12 +64,12 @@ export function createEcho(): Room {
   function makePanel() {
     return [
       {
-        type: 'buttons' as const, label: 'OCTAVE / 八度', options: ['-1', '0', '+1'],
+        type: 'buttons' as const, label: 'OCTAVE', labelZh: '八度', options: ['-1', '0', '+1'],
         value: octave + 1,
         onChange: (i: number) => { octave = i - 1; },
       },
       {
-        type: 'slider' as const, label: 'DELAY / 回声', min: 0, max: 1, step: 0.01,
+        type: 'slider' as const, label: 'DELAY', labelZh: '回声', min: 0, max: 1, step: 0.01,
         value: 0.35,
         fmt: (v: number) => v.toFixed(2),
         onChange: (v: number) => { ctx?.audio.setDelayWet(v); },
@@ -102,6 +104,7 @@ export function createEcho(): Room {
       mesh.rotation.x = -Math.PI / 2 + 0.42;
       mesh.position.y = 0.4;
       scene.add(mesh);
+      waterfall = mesh;
 
       // cosmic-microwave-background motes
       const N = 700;
@@ -119,6 +122,7 @@ export function createEcho(): Room {
       const pg = new THREE.BufferGeometry();
       pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
       pg.setAttribute('aSeed', new THREE.BufferAttribute(seed, 1));
+      motesGeo = pg;
       const pmat = new THREE.ShaderMaterial({
         vertexShader: motesVert,
         fragmentShader: common + motesFrag,
@@ -136,6 +140,7 @@ export function createEcho(): Room {
       ringMat = new THREE.ShaderMaterial({
         vertexShader: worldQuadVert,
         fragmentShader: common + ringFrag,
+        uniforms: { uOpacity: { value: 0.25 } },
         transparent: true,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
@@ -165,7 +170,7 @@ export function createEcho(): Room {
         return () => window.removeEventListener('pointerup', h);
       })();
       [offDown, offDrag, offMove, offUp2].forEach(subs.add, subs);
-      if (!audio.enabled) registry.hud?.showHint(COPY.hud.enableSound, 4);
+      if (!audio.enabled) registry.hud?.showHint(tr('hud.enableSound'), 4);
     },
     leave() {
       subs.flush();
@@ -186,7 +191,7 @@ export function createEcho(): Room {
       ring.position.z = 2.4 - (ctx.input.y * .5 + .5) * 4.4;
       const s = .55 + (Math.log2(curFreq / 110) + 2.5) * .3;
       ring.scale.setScalar(playing ? s : s * .5);
-      ringMat.opacity = playing ? 1 : .25;
+      ringMat.uniforms.uOpacity.value = playing ? 1 : 0.25;
     },
     render(r, target) {
       const w = target ? target.width : r.domElement.width;
@@ -204,6 +209,9 @@ export function createEcho(): Room {
       ring?.geometry.dispose();
       ringMat?.dispose();
       mat?.dispose();
+      waterfall?.geometry.dispose();
+      motesGeo?.dispose();
+      (this as any)._motes?.dispose();
       spectrum?.dispose();
       thumb.dispose();
     },

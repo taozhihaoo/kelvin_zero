@@ -88,6 +88,15 @@ export function createAtrium(): Room {
     });
   }
 
+  /** bring a clicked side portal to the front of the carousel */
+  function focusPortal(i: number) {
+    const cur = Math.round(ring.angle / 60);
+    let delta = ((i - selected) % 6 + 6) % 6;
+    if (delta > 3) delta -= 6;
+    ring.target = (cur + delta) * 60;
+    ring.vel = 0;
+  }
+
   return {
     id: 'atrium',
     bloom: BLOOM,
@@ -236,32 +245,35 @@ export function createAtrium(): Room {
         ring.vel = p.dx * 0.22;
         ring.target = ring.angle;
       });
-      const offUp = (() => {
-        const h = () => {
-          if (!ring.dragging) return;
-          ring.dragging = false;
-          ring.target = Math.round((ring.angle + ring.vel * 14) / 60) * 60;
-          ring.vel = 0;
-        };
-        window.addEventListener('pointerup', h);
-        return () => window.removeEventListener('pointerup', h);
-      })();
+      const offUp = ctx.input.on('up', () => {
+        if (!ring.dragging) return;
+        ring.dragging = false;
+        ring.target = Math.round((ring.angle + ring.vel * 14) / 60) * 60;
+        ring.vel = 0;
+      });
       const offWheel = ctx.input.on('wheel', (p: any) => {
         const cur = Math.round(ring.target / 60) * 60;
         ring.target = cur + (p.dy > 0 ? 60 : -60);
       });
       const offClick = ctx.input.on('click', () => {
-        if (hovered === selected && hovered >= 0) enterSelected();
+        if (hovered < 0) return;
+        if (hovered === selected) enterSelected();
+        else focusPortal(hovered);
       });
-      const offKey = ctx.input.on('key', ({ code }: any) => {
-        if (code === 'Enter') enterSelected();
+      const offKey = ctx.input.on('key', ({ code, event }: any) => {
+        // Enter on a focused HUD button must activate that button only
+        const interactive = event?.target instanceof Element &&
+          !!event.target.closest('button, a, input, [data-ui], [role="link"]');
+        if (code === 'Enter' && !interactive) enterSelected();
       });
       [offDrag, offUp, offWheel, offClick, offKey].forEach(subs.add, subs);
+      registry.refreshSelection = () => registry.hud?.showAtriumSelection(ROOMS[selected]);
       registry.hud?.showAtriumSelection(ROOMS[selected]);
     },
     leave() {
       subs.flush();
       registry.arrowHandler = null;
+      registry.refreshSelection = null;
       gsap.killTweensOf(cam.position);
       cam.position.set(0, 1.6, 12);
       ring.dragging = false;
@@ -280,7 +292,6 @@ export function createAtrium(): Room {
       const norm = ((Math.round(ring.angle / 60) % 6) + 6) % 6;
       if (norm !== selected) {
         selected = norm;
-        registry.hud?.setRoute({ name: 'atrium' }, null);
         registry.hud?.showAtriumSelection(ROOMS[selected]);
         registry.blip?.();
       }
