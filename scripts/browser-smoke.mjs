@@ -6,12 +6,15 @@
  *
  * Run after `npm run build`:  npm run test:browser
  */
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { join, extname, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+
+const STAGE = () => new Date().toISOString().slice(11, 19);
+const log = (msg) => console.log(`[${STAGE()}] ${msg}`);
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = join(root, 'dist');
@@ -20,6 +23,7 @@ if (!existsSync(join(dist, 'index.html'))) {
   process.exit(1);
 }
 
+// ---------------------------------------------------------------- server ---
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json',
@@ -36,31 +40,59 @@ const server = createServer((req, res) => {
 });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
+log(`static server on ${base}`);
 
-const CANDIDATES = [
-  process.env.CHROME_PATH,
-  '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
-  '/usr/bin/chromium', '/usr/bin/chromium-browser',
-  'C:/Program Files/Google/Chrome/Application/chrome.exe',
-  'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-  'google-chrome', 'chromium',
-].filter(Boolean);
-const chrome = CANDIDATES.find((p) => !p.includes('/') || existsSync(p));
+// --------------------------------------------------------------- browser ---
+function resolveChrome() {
+  const env = process.env.CHROME_PATH;
+  if (env && existsSync(env)) return env;
+  const fixed = [
+    '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium', '/usr/bin/chromium-browser',
+    '/opt/google/chrome/chrome', '/opt/google/chrome/google-chrome',
+    '/snap/bin/chromium', '/usr/bin/microsoft-edge',
+    'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+  ];
+  for (const p of fixed) if (existsSync(p)) return p;
+  for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'microsoft-edge']) {
+    try {
+      const p = execFileSync('which', [name], { encoding: 'utf8' }).trim();
+      if (p && existsSync(p)) return p;
+    } catch { /* not on PATH */ }
+  }
+  return null;
+}
+
+const chrome = resolveChrome();
 if (!chrome) {
   console.error('FAIL no Chrome/Chromium/Edge binary found (set CHROME_PATH)');
   server.close();
   process.exit(1);
 }
+let chromeVersion = 'unknown';
+try {
+  chromeVersion = execFileSync(chrome, ['--version'], { encoding: 'utf8' }).trim();
+} catch { /* ignore */ }
+log(`browser: ${chrome} (${chromeVersion})`);
 
 const cdpPort = 9700 + Math.floor(Math.random() * 200);
 const child = spawn(chrome, [
   '--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--no-first-run',
-  '--disable-extensions', '--disable-background-networking',
+  '--disable-extensions', '--disable-background-networking', '--disable-gpu-sandbox',
   '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
   '--hide-scrollbars', '--window-size=1440,900', '--force-device-scale-factor=1',
   `--remote-debugging-port=${cdpPort}`,
   `--user-data-dir=${join(tmpdir(), `kz-ci-chrome-${cdpPort}`)}`, 'about:blank',
-], { stdio: 'ignore' });
+], { stdio: ['ignore', 'ignore', 'pipe'] });
+
+let chromeStderr = '';
+child.stderr.on('data', (d) => {
+  chromeStderr += d.toString();
+  if (chromeStderr.length > 24000) chromeStderr = chromeStderr.slice(-24000);
+});
+let spawnError = null;
+child.on('error', (e) => { spawnError = e; });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let failed = 0;
@@ -70,9 +102,11 @@ const check = (name, ok, extra = '') => {
 };
 
 let ws;
+let evaluate = async () => { throw new Error('CDP not connected'); };
 try {
   let wsUrl;
   for (let i = 0; i < 80 && !wsUrl; i++) {
+    if (spawnError) throw new Error(`browser failed to start: ${spawnError.message}`);
     try {
       const list = await (await fetch(`http://127.0.0.1:${cdpPort}/json/list`)).json();
       wsUrl = list.find((x) => x.type === 'page')?.webSocketDebuggerUrl;
@@ -80,6 +114,7 @@ try {
     if (!wsUrl) await sleep(250);
   }
   if (!wsUrl) throw new Error('CDP endpoint unavailable');
+  log('CDP connected');
 
   ws = new WebSocket(wsUrl);
   await new Promise((res, rej) => {
@@ -101,10 +136,17 @@ try {
     pending.set(n, { resolve: ok, reject: no });
     ws.send(JSON.stringify({ id: n, method, params }));
   });
-  const evaluate = async (expression) => {
-    const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.text);
-    return r.result.value;
+  evaluate = async (expression) => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+      if (!r.exceptionDetails) return r.result.value;
+      const text = r.exceptionDetails.text || '';
+      if (attempt === 0 && /context was destroyed|Cannot find context/i.test(text)) {
+        await sleep(800);
+        continue;
+      }
+      throw new Error(`evaluate failed: ${text} :: ${expression.slice(0, 120)}`);
+    }
   };
   const state = () => evaluate(`JSON.stringify({
     errors: window.__kzErrors || [],
@@ -116,34 +158,46 @@ try {
     selection: document.getElementById('selection-card')?.hidden,
     rows: document.querySelectorAll('.index-row').length,
     indexLabel: document.getElementById('t-index')?.textContent,
-    lang: document.documentElement.lang
+    lang: document.documentElement.lang,
+    hasKz: !!window.__kz
   })`).then(JSON.parse);
 
   await send('Page.enable'); await send('Runtime.enable');
+  log(`navigating to ${base}/?autoenter&warm=3&lang=en`);
   await send('Page.navigate', { url: `${base}/?autoenter&warm=3&lang=en` });
 
   let booted = false;
   for (let i = 0; i < 120 && !booted; i++) {
     await sleep(1000);
+    if (spawnError) throw new Error(`browser crashed: ${spawnError.message}`);
     booted = (await evaluate('document.getElementById("loader")?.style.display === "none"')) === true;
+    if (!booted && i > 0 && i % 10 === 0) {
+      log(`still booting (${i}s): ${await evaluate('document.getElementById("loader-pct")?.textContent')}`);
+    }
   }
   check('production build boots (loader completes)', booted);
+  if (!booted) {
+    log('boot diagnostics: ' + await evaluate('JSON.stringify({pct:document.getElementById("loader-pct")?.textContent,log:document.getElementById("loader-log")?.innerText?.slice(-400),errors:window.__kzErrors||[],kz:!!window.__kz,ua:navigator.userAgent})'));
+  }
 
   let s = await state();
   check('atrium HUD + selection card render', !s.selection && s.errors.length === 0, JSON.stringify(s));
   check('document title is set', /KELVIN ZERO/.test(s.title), s.title);
 
   await evaluate('location.hash = "#/room/2"');
+  log('route → #/room/2');
   await sleep(3500);
   s = await state();
   check('exhibit route shows dossier, panel and prev/next', !s.info && !s.panel && !s.nav && s.errors.length === 0, JSON.stringify(s));
 
   await evaluate('location.hash = "#/index"');
+  log('route → #/index');
   await sleep(3500);
   s = await state();
   check('index route lists six exhibits', s.rows === 6 && s.errors.length === 0, JSON.stringify(s));
 
   await evaluate('location.hash = "#/"');
+  log('route → #/');
   await sleep(3500);
   s = await state();
   check('returning to atrium restores selection card', !s.selection && s.errors.length === 0);
@@ -158,6 +212,10 @@ try {
 } catch (e) {
   console.error('FAIL browser smoke threw:', e.message);
   failed++;
+  if (chromeStderr.trim()) console.error('--- browser stderr (tail) ---\n' + chromeStderr.slice(-4000));
+  try {
+    console.error('--- page state ---\n' + await evaluate('JSON.stringify({url:location.href,title:document.title,errors:window.__kzErrors||[],pct:document.getElementById("loader-pct")?.textContent,hasKz:!!window.__kz})'));
+  } catch { /* page may be gone */ }
 } finally {
   ws?.close();
   child.kill();

@@ -75,9 +75,31 @@ jobs:
         run: |
           BIN="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
           echo "path=$BIN" >> "$GITHUB_OUTPUT"
+          echo "Chrome: ${BIN:-<not on PATH>}"
           if [ -n "$BIN" ]; then "$BIN" --version; fi
 
       - name: Run browser smoke test
         env:
           CHROME_PATH: ${{ steps.chrome.outputs.path }}
-        run: npm run test:browser
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:browser 2>&1 | tee smoke.log
+          status=${PIPESTATUS[0]}
+          {
+            echo '### Headless browser smoke output'
+            echo '```'
+            tail -n 160 smoke.log
+            echo '```'
+            echo "Chrome path: \`${CHROME_PATH:-<auto-detected>}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
+
+      - name: Upload smoke log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-smoke-log
+          path: smoke.log
+          if-no-files-found: ignore
+          retention-days: 7
