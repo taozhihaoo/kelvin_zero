@@ -162,6 +162,16 @@ try {
     hasKz: !!window.__kz
   })`).then(JSON.parse);
 
+  /** poll a JS predicate instead of assuming a fixed frame rate */
+  const waitFor = async (expression, timeoutMs = 20000) => {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      try { if (await evaluate(expression)) return true; } catch { /* context may be swapping */ }
+      await sleep(300);
+    }
+    return false;
+  };
+
   await send('Page.enable'); await send('Runtime.enable');
   log(`navigating to ${base}/?autoenter&warm=3&lang=en`);
   await send('Page.navigate', { url: `${base}/?autoenter&warm=3&lang=en` });
@@ -186,23 +196,24 @@ try {
 
   await evaluate('location.hash = "#/room/2"');
   log('route → #/room/2');
-  await sleep(3500);
+  const roomReady = await waitFor('!document.getElementById("info-block").hidden && !document.getElementById("panel").hidden && !document.getElementById("room-nav").hidden');
   s = await state();
-  check('exhibit route shows dossier, panel and prev/next', !s.info && !s.panel && !s.nav && s.errors.length === 0, JSON.stringify(s));
+  check('exhibit route shows dossier, panel and prev/next', roomReady && s.errors.length === 0, JSON.stringify(s));
 
   await evaluate('location.hash = "#/index"');
   log('route → #/index');
-  await sleep(3500);
+  const indexReady = await waitFor('document.querySelectorAll(".index-row").length === 6');
   s = await state();
-  check('index route lists six exhibits', s.rows === 6 && s.errors.length === 0, JSON.stringify(s));
+  check('index route lists six exhibits', indexReady && s.rows === 6 && s.errors.length === 0, JSON.stringify(s));
 
   await evaluate('location.hash = "#/"');
   log('route → #/');
-  await sleep(3500);
+  const atriumReady = await waitFor('!document.getElementById("selection-card").hidden');
   s = await state();
-  check('returning to atrium restores selection card', !s.selection && s.errors.length === 0);
+  check('returning to atrium restores selection card', atriumReady && s.errors.length === 0);
 
   await evaluate('window.__kz && window.__kz.setLang("zh")');
+  await waitFor('document.documentElement.lang === "zh-CN"', 6000);
   await sleep(700);
   s = await state();
   check('language switch works without reload', s.lang === 'zh-CN' && s.indexLabel === '索引' && s.errors.length === 0, JSON.stringify(s));

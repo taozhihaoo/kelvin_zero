@@ -31,6 +31,12 @@ import { initDebugStats } from './core/debug';
 
 initLang();
 
+// WebGL frames can occasionally exceed 500 ms (software rendering, shader
+// compilation, heavy simulations). GSAP's default lag smoothing would then
+// advance timelines by only 33 ms per frame, stretching a 1.6 s frost wipe to
+// tens of seconds. Run animations on real elapsed time instead.
+gsap.ticker.lagSmoothing(0);
+
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
 
 // router is created inside boot(); rooms reach it through the registry
